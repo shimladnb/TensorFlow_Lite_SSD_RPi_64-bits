@@ -37,26 +37,6 @@ UdpTransmitSocket transmitSocket( IpEndpointName( ADDRESS, PORT ) );
 float testOsc[20];
 
 
-void SendOscMessage()
-{
-    for(int i : testOsc)
-    {
-        testOsc[i] = i;
-    }
-
-    char buffer[OUTPUT_BUFFER_SIZE];
-    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
-    p << osc::BeginBundleImmediate;
-    p << osc::BeginMessage( "/SkeletonPosition" );
-    for (int i=0; i<17; i++)
-    {
-        p << testOsc[i];
-    }
-    p << osc::EndMessage;
-    p << osc::EndBundle;
-
-    transmitSocket.Send( p.Data(), p.Size() );
-};
 
 static bool getFileContent(std::string fileName)
 {
@@ -77,6 +57,22 @@ static bool getFileContent(std::string fileName)
     in.close();
     return true;
 }
+
+void SendOscMessage(const char* id, float locx, float locy)
+{
+    char buffer[OUTPUT_BUFFER_SIZE];
+    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+    p << osc::BeginBundleImmediate;
+    p << osc::BeginMessage( "/object/location" );
+    p << id;
+    p << locx;
+    p << locy;
+    p << osc::EndMessage;
+    p << osc::EndBundle;
+
+    transmitSocket.Send( p.Data(), p.Size() );
+};
+
 
 void detect_from_video(Mat &src)
 {
@@ -121,6 +117,8 @@ void detect_from_video(Mat &src)
             Rect rec((int)x1, (int)y1, (int)(x2 - x1), (int)(y2 - y1));
             rectangle(src,rec, Scalar(0, 0, 255), 1, 8, 0);
             putText(src, format("%s", Labels[det_index].c_str()), Point(x1, y1-5),FONT_HERSHEY_SIMPLEX,0.5, Scalar(0, 0, 255), 1, 8, 0);
+
+            SendOscMessage(Labels[det_index].c_str(), x1, y1);
         }
     }
 }
@@ -174,7 +172,7 @@ int main(int argc,char ** argv)
             break;
         }
 
-        SendOscMessage();
+
 
         Tbegin = chrono::steady_clock::now();
 

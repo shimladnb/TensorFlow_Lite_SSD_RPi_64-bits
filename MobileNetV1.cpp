@@ -11,6 +11,18 @@
 #include "tensorflow/lite/model.h"
 #include <cmath>
 
+#include "libcamera/libcamera.h"
+#include <cmath>
+
+#include "osc/OscOutboundPacketStream.h"
+#include "ip/UdpSocket.h"
+#include <cstdlib>
+#include <cstring>
+
+#define ADDRESS "23.23.23.100"
+#define PORT 7000
+#define OUTPUT_BUFFER_SIZE 1024
+
 using namespace cv;
 using namespace std;
 
@@ -91,6 +103,7 @@ int main(int argc,char ** argv)
     float FPS[16];
     int i, Fcnt=0;
     Mat frame;
+    const    char* gst = "libcamerasrc camera-name=/base/axi/pcie@120000/rp1/i2c@80000/ov5647@36 ! video/x-raw,width=1296,height=972,framerate=20/1,format=RGBx ! videoconvert ! videoscale !  video/x-raw,width=1296,height=972,format=BGR ! appsink";
     chrono::steady_clock::time_point Tbegin, Tend;
 
     for(i=0;i<16;i++) FPS[i]=0.0;
@@ -112,7 +125,7 @@ int main(int argc,char ** argv)
         exit(-1);
 	}
 
-    VideoCapture cap("James.mp4");
+    VideoCapture cap(gst);
     if (!cap.isOpened()) {
         cerr << "ERROR: Unable to open the camera" << endl;
         return 0;

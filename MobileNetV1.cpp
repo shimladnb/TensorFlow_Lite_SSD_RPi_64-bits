@@ -20,7 +20,7 @@
 #include <cstring>
 
 #define ADDRESS "23.23.23.100"
-#define PORT 7000
+#define PORT 8000
 #define OUTPUT_BUFFER_SIZE 1024
 
 using namespace cv;
@@ -30,7 +30,7 @@ const size_t width = 300;
 const size_t height = 300;
 //width=1296,height=972
 
-const float confidence_threshold = 0.45f;
+const float confidence_threshold = 0.5f;
 
 std::vector<std::string> Labels;
 std::unique_ptr<tflite::Interpreter> interpreter;
@@ -75,6 +75,19 @@ void SendOscMessage(const char* id,int index, float locx, float locy)
     transmitSocket.Send( p.Data(), p.Size() );
 };
 
+void SendSimpleOscMessage(int amount, float averageWidth)
+{
+    char buffer[OUTPUT_BUFFER_SIZE];
+    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+    p << osc::BeginBundleImmediate;
+    p << osc::BeginMessage( "/objects/info" );
+    p << amount;
+    p << averageWidth;
+    p << osc::EndMessage;
+    p << osc::EndBundle;
+    transmitSocket.Send( p.Data(), p.Size() );
+};
+
 
 void detect_from_video(Mat &src)
 {
@@ -101,10 +114,12 @@ void detect_from_video(Mat &src)
     const float* detection_classes=interpreter->tensor(interpreter->outputs()[1])->data.f;
     const float* detection_scores = interpreter->tensor(interpreter->outputs()[2])->data.f;
     const int    num_detections = *interpreter->tensor(interpreter->outputs()[3])->data.f;
+    int     num_humans;
+    float   width_humans[num_detections];
+    float   avr_width_humans;
 
-    //there are ALWAYS 10 detections no matter how many objects are detectable
-//        cout << "number of detections: " << num_detections << "\n";
-
+    num_humans = 0;
+    avr_width_humans = 0.f;
 
     for(int i = 0; i < num_detections; i++)
     {
@@ -122,21 +137,30 @@ void detect_from_video(Mat &src)
             float xc= (x1+x2)/2;
             float yc= (y1+y2)/2;
 
-            //color = list(np.random.random(size=3) * 256);
+            float xw= (x2-x1)/cam_width;
+            float yw= (y2-y1)/cam_height;
+
             Rect rec((int)x1, (int)y1, (int)(x2 - x1), (int)(y2 - y1));
             rectangle(src,rec, Scalar(255, 0, 255), 1, 8, 0);
             circle(src, Point_(xc,yc), 5, Scalar(255, 0, 255), 1, FILLED, 0);
             putText(src, format("%s", Labels[det_index].c_str()), Point(x1, y1-5),FONT_HERSHEY_SIMPLEX,0.7f, Scalar(0, 0, 255), 1, 8, 0);
 
             SendOscMessage(Labels[det_index].c_str(),det_index, xcn, ycn);
+
+            if (det_index == 1)
+            {
+                num_humans ++;
+                avr_width_humans += xw;
+            }
         }
     }
+
+    avr_width_humans /= num_humans;
+    SendSimpleOscMessage(num_humans, avr_width_humans);
 }
 
 int main(int argc,char ** argv)
 {
-
-
     float f;
     float FPS[16];
     int i, Fcnt=0;
@@ -181,8 +205,6 @@ int main(int argc,char ** argv)
             cerr << "ERROR: Unable to grab from the camera" << endl;
             break;
         }
-
-
 
         Tbegin = chrono::steady_clock::now();
 

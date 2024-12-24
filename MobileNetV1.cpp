@@ -28,13 +28,15 @@ using namespace std;
 
 const size_t width = 300;
 const size_t height = 300;
+//width=1296,height=972
+
+const float confidence_threshold = 0.45f;
 
 std::vector<std::string> Labels;
 std::unique_ptr<tflite::Interpreter> interpreter;
 
 UdpTransmitSocket transmitSocket( IpEndpointName( ADDRESS, PORT ) );
 
-float testOsc[20];
 
 
 
@@ -58,18 +60,18 @@ static bool getFileContent(std::string fileName)
     return true;
 }
 
-void SendOscMessage(const char* id, float locx, float locy)
+void SendOscMessage(const char* id,int index, float locx, float locy)
 {
     char buffer[OUTPUT_BUFFER_SIZE];
     osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
     p << osc::BeginBundleImmediate;
-    p << osc::BeginMessage( "/object/location" );
+    p << osc::BeginMessage( "/object/info" );
     p << id;
+    p << index;
     p << locx;
     p << locy;
     p << osc::EndMessage;
     p << osc::EndBundle;
-
     transmitSocket.Send( p.Data(), p.Size() );
 };
 
@@ -81,7 +83,7 @@ void detect_from_video(Mat &src)
     int cam_height=src.rows;
 
     // copy image to input as input tensor
-    cv::resize(src, image, Size(300,300));
+    cv::resize(src, image, Size(width,height));
     memcpy(interpreter->typed_input_tensor<uchar>(0), image.data, image.total() * image.elemSize());
 
     interpreter->SetAllowFp16PrecisionForFp32(true);
@@ -103,7 +105,7 @@ void detect_from_video(Mat &src)
     //there are ALWAYS 10 detections no matter how many objects are detectable
 //        cout << "number of detections: " << num_detections << "\n";
 
-    const float confidence_threshold = 0.5;
+
     for(int i = 0; i < num_detections; i++)
     {
         if(detection_scores[i] > confidence_threshold)
@@ -114,11 +116,19 @@ void detect_from_video(Mat &src)
             float y2=detection_locations[4*i+2]*cam_height;
             float x2=detection_locations[4*i+3]*cam_width;
 
-            Rect rec((int)x1, (int)y1, (int)(x2 - x1), (int)(y2 - y1));
-            rectangle(src,rec, Scalar(0, 0, 255), 1, 8, 0);
-            putText(src, format("%s", Labels[det_index].c_str()), Point(x1, y1-5),FONT_HERSHEY_SIMPLEX,0.5, Scalar(0, 0, 255), 1, 8, 0);
+            float xcn= (detection_locations[4*i+1]+detection_locations[4*i+3])/2;
+            float ycn= (detection_locations[4*i  ]+detection_locations[4*i+2])/2;
 
-            SendOscMessage(Labels[det_index].c_str(), x1, y1);
+            float xc= (x1+x2)/2;
+            float yc= (y1+y2)/2;
+
+            //color = list(np.random.random(size=3) * 256);
+            Rect rec((int)x1, (int)y1, (int)(x2 - x1), (int)(y2 - y1));
+            rectangle(src,rec, Scalar(255, 0, 255), 1, 8, 0);
+            circle(src, Point_(xc,yc), 5, Scalar(255, 0, 255), 1, FILLED, 0);
+            putText(src, format("%s", Labels[det_index].c_str()), Point(x1, y1-5),FONT_HERSHEY_SIMPLEX,0.7f, Scalar(0, 0, 255), 1, 8, 0);
+
+            SendOscMessage(Labels[det_index].c_str(),det_index, xcn, ycn);
         }
     }
 }
@@ -178,10 +188,6 @@ int main(int argc,char ** argv)
 
         detect_from_video(frame);
 
-        //--------------OSC
-
-        //--------------OSC
-
         Tend = chrono::steady_clock::now();
         //calculate frame rate
         f = chrono::duration_cast <chrono::milliseconds> (Tend - Tbegin).count();
@@ -197,7 +203,8 @@ int main(int argc,char ** argv)
         imshow("RPi 4 - 1,9 GHz - 2 Mb RAM", frame);
 
         char esc = waitKey(5);
-        if(esc == 27) break;
+        if(esc == 27)
+        break;
     }
 
     cout << "Closing the camera" << endl;
